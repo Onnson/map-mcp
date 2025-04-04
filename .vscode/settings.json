@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "multi-agent-comm-fastmcp": {
+      "command": "/home/user/multi-agent-mcp/.venv/bin/python",
+      "args": [
+        "/home/user/multi-agent-mcp/multi_agent_comm_server.py"
+      ],
+      "env": {},
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
