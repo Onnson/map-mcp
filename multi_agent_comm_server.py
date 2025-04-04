@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 # Corrected imports based on exploration
 from mcp.server import FastMCP
-from mcp.server.fastmcp.tools import ToolManager # Corrected import
+# ToolManager is used internally by FastMCP, no need to import directly usually
 from mcp.server.fastmcp.exceptions import ToolError
 
 # Configure basic logging
@@ -79,6 +79,8 @@ def get_current_timestamp() -> str:
 class CheckRequestsOutput(BaseModel):
     pending_requests: List[str] = Field(description="List of full paths to pending request JSON files.")
 
+# Note: FastMCP automatically uses function signature for input schema,
+# but defining input models explicitly can improve clarity and validation.
 class GetRequestInput(BaseModel):
     request_filepath: str = Field(description="Full path to the request JSON file.")
 
@@ -101,8 +103,17 @@ class CreateFileInput(BaseModel):
 class CreateFileOutput(BaseModel):
     filepath: str = Field(description="The full path to the created file.")
 
-# --- Tool Implementations (Define functions first) ---
+# --- Server Instantiation (Instantiate FastMCP first) ---
 
+server = FastMCP(
+    server_name="multi-agent-comm-fastmcp", # Match the name in settings.json
+    server_version="0.1.0",
+    # instructions="Optional server instructions here"
+)
+
+# --- Tool Implementations (Use @server.tool() decorator) ---
+
+@server.tool()
 async def check_for_new_requests(project_root: str) -> CheckRequestsOutput:
     """
     Scans the project's agent_docs/multi_agent directory for pending requests (JSON files with status 'pending').
@@ -127,6 +138,7 @@ async def check_for_new_requests(project_root: str) -> CheckRequestsOutput:
         log.error(f"[check_for_new_requests] Error scanning directory {comm_dir}: {e}")
         raise ToolError(f"Failed to scan for requests: {e}") from e
 
+@server.tool()
 async def get_request_summary(request_filepath: str) -> Dict[str, Any]:
     """
     Reads a request JSON and returns a concise summary (task_id, questions[id, text], desired_output). Use this for quick assessment.
@@ -150,6 +162,7 @@ async def get_request_summary(request_filepath: str) -> Dict[str, Any]:
     log.info(f"[get_request_summary] Summary generated for task_id: {summary_filtered.get('task_id')}")
     return summary_filtered
 
+@server.tool()
 async def get_request_details(request_filepath: str) -> Dict[str, Any]:
     """
     Reads and returns the full content of a request JSON file. Use when the summary is insufficient.
@@ -164,6 +177,8 @@ async def get_request_details(request_filepath: str) -> Dict[str, Any]:
     log.info(f"[get_request_details] Full details retrieved for task_id: {data.get('task_id')}")
     return data
 
+# Using explicit input model for clarity, though FastMCP could infer from signature
+@server.tool()
 async def update_request_status(input: UpdateStatusInput) -> None:
     """
     Updates the status ('answered', 'partial', 'error') and response_timestamp of a request file.
@@ -185,6 +200,8 @@ async def update_request_status(input: UpdateStatusInput) -> None:
         raise ToolError(f"Failed to write updated file: {input.request_filepath}")
     log.info(f"[update_request_status] Successfully updated status for task_id: {data.get('task_id')}")
 
+# Using explicit input model
+@server.tool()
 async def add_answer_to_request(input: AddAnswerInput) -> None:
     """
     Adds an answer object to a specific question within a request file. Updates response_timestamp.
@@ -212,6 +229,8 @@ async def add_answer_to_request(input: AddAnswerInput) -> None:
         raise ToolError(f"Failed to write updated file: {input.request_filepath}")
     log.info(f"[add_answer_to_request] Successfully added answer to question '{input.question_id}' for task_id: {data.get('task_id')}")
 
+# Using explicit input model
+@server.tool()
 async def create_associated_file(input: CreateFileInput) -> CreateFileOutput:
     """
     Creates a new file (e.g., response, code example) associated with a task in the project's agent_docs/multi_agent directory.
@@ -239,26 +258,8 @@ async def create_associated_file(input: CreateFileInput) -> CreateFileOutput:
         log.error(f"[create_associated_file] Unexpected error creating file {filepath}: {e}")
         raise ToolError(f"Unexpected error creating file: {e}") from e
 
-# --- Tool Registration ---
-
-# Create a ToolManager instance
-tools = ToolManager()
-
-# Register functions using the add_tool method
-tools.add_tool(check_for_new_requests)
-tools.add_tool(get_request_summary)
-tools.add_tool(get_request_details)
-tools.add_tool(update_request_status)
-tools.add_tool(add_answer_to_request)
-tools.add_tool(create_associated_file)
-
-
 # --- Main Execution ---
 if __name__ == "__main__":
     log.info("Starting Multi-Agent Comm Server (FastMCP)...")
-    server = FastMCP(
-        tools=tools, # Pass the ToolManager instance
-        server_name="multi-agent-comm-fastmcp", # Match the name in settings.json
-        server_version="0.1.0",
-    )
-    asyncio.run(server.run())
+    # Server is already instantiated above, tools are registered via decorator
+    asyncio.run(server.run()) # run() defaults to stdio
